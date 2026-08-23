@@ -19,13 +19,13 @@ func main() {
 	watch := flag.Bool("watch", false, "Monitor dbus for signals")
 	flag.Parse()
 
-	initLogging(*debug)
+	logger := initLogging(*debug)
 
 	// connect to the appropriate bus and prepare to handle signals from it
-	busConn := connectToBus(*system, *private)
+	busConn := connectToBus(*system, *private, logger)
 
 	if *watch {
-		enableWatch(busConn)
+		enableWatch(busConn, logger)
 	} else {
 		listBus(busConn)
 	}

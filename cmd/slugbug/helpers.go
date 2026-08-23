@@ -1,19 +1,18 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"os/user"
 )
 
-// initialize logging functionality
-func initLogging(debug bool) {
+func initLogging(debug bool) *slog.Logger {
+	logOpts := slog.HandlerOptions{Level: slog.LevelInfo}
+
 	if debug {
-		log.SetFlags(log.LstdFlags | log.Lshortfile)
-	} else {
-		log.SetFlags(0)
-		log.SetOutput(os.Stderr)
+		logOpts.Level = slog.LevelDebug
 	}
+	return slog.New(slog.NewTextHandler(os.Stderr, &logOpts))
 }
 
 func IsRootUser() bool {

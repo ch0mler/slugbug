@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/godbus/dbus/v5"
@@ -13,7 +15,7 @@ import (
 const MYNAME string = "ch0mler.slugbug"
 
 // connect to the appropriate DBus bus
-func connectToBus(system bool, private bool) *dbus.Conn {
+func connectToBus(system bool, private bool, logger *slog.Logger) *dbus.Conn {
 	var conn *dbus.Conn
 	var err error
 
@@ -55,29 +57,29 @@ func connectToBus(system bool, private bool) *dbus.Conn {
 	}
 
 	if conn.Connected() {
-		fmt.Printf("Connected to %s\n", conn.BusObject().Path())
+		busPath := string(conn.BusObject().Path())
+		logger.Info("Connected to bus", slog.String("path", busPath))
 	}
 
 	if reply, err := conn.RequestName(MYNAME, dbus.NameFlagReplaceExisting); err != nil {
-		log.Printf("Could not request name: '%s'\n", MYNAME)
+		logger.Warn("Could not request name", slog.String("name", MYNAME))
 	} else if reply == dbus.RequestNameReplyPrimaryOwner {
-		log.Printf("Successfully bound connection to name: %s\n", MYNAME)
+		logger.Debug("Successfully bound connection to name", slog.String("name", MYNAME))
 	} else {
-		log.Printf("Unexpected response when requesting name '%s': %s\n", MYNAME, reply.String())
+		logger.Warn("Unexpected response when requesting name", slog.String("name", MYNAME), slog.String("reply", reply.String()))
 	}
 
 	return conn
 }
 
 // initialize DBus monitoring signals
-func enableWatch(conn *dbus.Conn) {
+func enableWatch(conn *dbus.Conn, logger *slog.Logger) {
 	// connect to signal channel
 	ch := make(chan *dbus.Signal, 64)
 	conn.Signal(ch)
 
-	fmt.Printf("%v\n", conn.Names())
-	// log.Printf("Monitoring the system bus\n")
-	// log.Print("Monitoring the session bus\n")
+	busNames := strings.Join(conn.Names(), ",")
+	logger.Debug("Watching bus", "names", busNames)
 
 	// Handle termination signals to clean up
 	sigc := make(chan os.Signal, 1)
@@ -90,10 +92,10 @@ loop:
 				break loop
 			}
 			if err := printSignal(s); err != nil {
-				log.Printf("Error handling signal: %v", err)
+				logger.Error("Error handling signal", slog.String("error", err.Error()))
 			}
 		case sig := <-sigc:
-			log.Printf("Received signal %s, exiting", sig)
+			logger.Info("Received signal. Exiting", slog.String("signal", sig.String()))
 			break loop
 		}
 	}
