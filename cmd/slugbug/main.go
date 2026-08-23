@@ -2,32 +2,31 @@ package main
 
 import (
 	"flag"
-	"log"
-	"os"
+	"fmt"
+
+	"github.com/godbus/dbus/v5"
 )
 
-// initialize logging functionality
-func initLogging(debug bool) {
-	if debug {
-		log.SetFlags(log.LstdFlags | log.Lshortfile)
-	} else {
-		log.SetFlags(0)
-		log.SetOutput(os.Stderr)
-	}
+func listBus(conn *dbus.Conn) {
+	fmt.Printf("Bus: %v\n", conn.BusObject())
+	fmt.Printf("Names: %v\n", conn.Names())
 }
 
 func main() {
 	debug := flag.Bool("debug", false, "Enable debug logging")
 	system := flag.Bool("system", false, "Use system bus instead of session bus (requires elevated privileges)")
+	private := flag.Bool("private", false, "Use a private connection to dbus")
 	watch := flag.Bool("watch", false, "Monitor dbus for signals")
 	flag.Parse()
 
 	initLogging(*debug)
 
 	// connect to the appropriate bus and prepare to handle signals from it
-	busConn := connectToBus(*system)
+	busConn := connectToBus(*system, *private)
 
 	if *watch {
 		enableWatch(busConn)
+	} else {
+		listBus(busConn)
 	}
 }
