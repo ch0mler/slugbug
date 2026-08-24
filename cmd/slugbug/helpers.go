@@ -19,3 +19,8 @@ func IsRootUser() bool {
 	currentUser, err := user.Current()
 	return (err == nil) && (currentUser.Username == "root")
 }
+
+func LogFatal(message string, err error, logger *slog.Logger) {
+	logger.Error(message, slog.String("error", err.Error()))
+	os.Exit(1)
+}

@@ -14,6 +14,11 @@ import (
 
 const MYNAME string = "ch0mler.slugbug"
 
+func closeConnection(conn *dbus.Conn, logger *slog.Logger) {
+	logger.Debug("Closing connection", slog.Any("names", conn.Names()))
+	conn.Close()
+}
+
 // connect to the appropriate DBus bus
 func connectToBus(system bool, private bool, logger *slog.Logger) *dbus.Conn {
 	var conn *dbus.Conn
@@ -31,7 +36,7 @@ func connectToBus(system bool, private bool, logger *slog.Logger) *dbus.Conn {
 		}
 	} else {
 		if IsRootUser() {
-			log.Fatalf("Root users do not have access to a per-user session bus. Use --system instead")
+			log.Fatalf("Root users do not have access to a per-user session bus. Use -system instead")
 		} else {
 			if private {
 				conn, err = dbus.SessionBusPrivate()
@@ -42,23 +47,23 @@ func connectToBus(system bool, private bool, logger *slog.Logger) *dbus.Conn {
 	}
 
 	if err != nil {
-		log.Fatalf("Failed to connect to dbus: %v", err)
+		LogFatal("Failed to connect to dbus", err, logger)
 	}
-	defer conn.Close()
 
 	if private {
 		if err = conn.Auth(nil); err != nil {
-			log.Fatalf("Failed to auth to dbus: %v", err)
+			LogFatal("Failed to auth to dbus", err, logger)
 		}
 
 		if err = conn.Hello(); err != nil {
-			log.Fatalf("Dbus connection is not in a friendly mood right now: %v", err)
+			LogFatal("Dbus connection is not in a friendly mood right now", err, logger)
 		}
 	}
 
 	if conn.Connected() {
 		busPath := string(conn.BusObject().Path())
-		logger.Info("Connected to bus", slog.String("path", busPath))
+		connName := conn.Names()[0]
+		logger.Debug("Connected to bus", slog.String("unique_id", connName), slog.String("path", busPath))
 	}
 
 	if reply, err := conn.RequestName(MYNAME, dbus.NameFlagReplaceExisting); err != nil {
@@ -98,6 +103,18 @@ loop:
 			logger.Info("Received signal. Exiting", slog.String("signal", sig.String()))
 			break loop
 		}
+	}
+}
+
+// list service objects available to call on the bus
+func listBusServices(conn *dbus.Conn, logger *slog.Logger) {
+	var listNames []string
+	err := conn.BusObject().Call("org.freedesktop.DBus.ListNames", 0).Store(&listNames)
+	if err != nil {
+		LogFatal("Could not list service names", err, logger)
+	}
+	for _, v := range listNames {
+		fmt.Printf("%v\n", v)
 	}
 }
 
