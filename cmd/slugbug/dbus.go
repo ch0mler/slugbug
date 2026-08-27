@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -31,8 +32,9 @@ func connectToBus(system bool, private bool, logger *slog.Logger) *dbus.Conn {
 			} else {
 				conn, err = dbus.SystemBus()
 			}
+			// TODO: close connection if an error occurs
 		} else {
-			log.Fatal("Elevated privileges are needed to spy on the system bus")
+			log.Fatalf("Elevated privileges are needed to spy on the system bus")
 		}
 	} else {
 		if IsRootUser() {
@@ -69,7 +71,7 @@ func connectToBus(system bool, private bool, logger *slog.Logger) *dbus.Conn {
 	if reply, err := conn.RequestName(MYNAME, dbus.NameFlagReplaceExisting); err != nil {
 		logger.Warn("Could not request name", slog.String("name", MYNAME))
 	} else if reply == dbus.RequestNameReplyPrimaryOwner {
-		logger.Debug("Successfully bound connection to name", slog.String("name", MYNAME))
+		logger.Debug(fmt.Sprintf("Successfully bound connection to '%s'", MYNAME), slog.Any("names", conn.Names()))
 	} else {
 		logger.Warn("Unexpected response when requesting name", slog.String("name", MYNAME), slog.String("reply", reply.String()))
 	}
@@ -107,15 +109,30 @@ loop:
 }
 
 // list service objects available to call on the bus
-func listBusServices(conn *dbus.Conn, logger *slog.Logger) {
-	var listNames []string
+func listBusServices(conn *dbus.Conn, include_unique bool, logger *slog.Logger) []string {
+	var (
+		listNames     []string
+		filteredNames []string
+	)
 	err := conn.BusObject().Call("org.freedesktop.DBus.ListNames", 0).Store(&listNames)
 	if err != nil {
 		LogFatal("Could not list service names", err, logger)
 	}
-	for _, v := range listNames {
-		fmt.Printf("%v\n", v)
+
+	for _, name := range listNames {
+		// own bus name encountered - skip it
+		if slices.Contains(conn.Names(), name) {
+			logger.Debug("Skipping own bus name", slog.String("name", name))
+			continue
+		}
+		// optionally include unique bus connection names like :1.0
+		if !strings.HasPrefix(name, ":") || include_unique {
+			filteredNames = append(filteredNames, name)
+		}
 	}
+
+	logger.Debug(fmt.Sprintf("Filtered %d connections down to %d", len(listNames), len(filteredNames)))
+	return filteredNames
 }
 
 func printSignal(s *dbus.Signal) error {
