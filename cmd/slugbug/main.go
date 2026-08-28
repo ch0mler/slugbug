@@ -4,7 +4,25 @@ import (
 	"flag"
 	"fmt"
 	"log"
+
+	"github.com/godbus/dbus/v5"
+	"github.com/godbus/dbus/v5/introspect"
 )
+
+func InspectBus(service string, conn *dbus.Conn) {
+	node, err := introspect.Call(conn.Object(service, conn.BusObject().Path()))
+	if err != nil {
+		log.Fatal(err)
+	}
+	// nodeDetails := introspect.NewIntrospectable(node)
+	// fmt.Println(nodeDetails.Introspect())
+	for _, v := range node.Interfaces {
+		fmt.Printf("Signals for %s\n", v.Name)
+		for _, k := range v.Signals {
+			fmt.Printf("%v\n", k)
+		}
+	}
+}
 
 func main() {
 	unique := flag.Bool("unique", false, "Include unique connection names (e.g. :1.0, :1.11)")
@@ -20,13 +38,23 @@ func main() {
 	// close the connection at the end of the run
 	defer closeConnection(busConn, logger)
 
-	names := listBusServices(busConn, *unique, logger)
+	var (
+		// all possible bus names, including unique connections
+		allNames []string
+		// only bus names the user is likely interested in
+		busNames []string
+	)
 
-	form := ChooseBus(names)
+	allNames = listBusServices(busConn, *unique, logger)
+
+	form := ChooseBus(allNames, &busNames)
 	if err := form.Run(); err != nil {
 		log.Fatal(err)
 	}
 
-	busNames := form.Get("name")
 	fmt.Printf("You chose to monitor the following buses: %v\n", busNames)
+
+	for _, v := range busNames {
+		InspectBus(v, busConn)
+	}
 }
