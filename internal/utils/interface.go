@@ -1,7 +1,8 @@
-package main
+package utils
 
 import "charm.land/huh/v2"
 
+// Given a list of bus names, ask the user which they'd like to listen on
 func ChooseBus(busNames []string, ret *[]string) *huh.Form {
 	return huh.NewForm(
 		huh.NewGroup(

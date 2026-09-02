@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"log/slog"
@@ -6,7 +6,7 @@ import (
 	"os/user"
 )
 
-func initLogging(debug bool) *slog.Logger {
+func InitLogging(debug bool) *slog.Logger {
 	logOpts := slog.HandlerOptions{Level: slog.LevelInfo}
 
 	if debug {
