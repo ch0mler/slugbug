@@ -45,6 +45,10 @@ func (s *Slugbug) Name() string {
 	return s.name
 }
 
+func (s *Slugbug) Conn() *dbus.Conn {
+	return s.conn
+}
+
 // connect to the appropriate DBus bus
 func (s *Slugbug) ConnectToBus() {
 	if s.systemBus {
@@ -102,7 +106,9 @@ func (s *Slugbug) ConnectToBus() {
 
 // disconnect from the DBus
 func (s *Slugbug) CloseConnection() {
+	s.logger.Debug("Releasing connection name", slog.String("name", s.name))
 	s.logger.Debug("Closing connection", slog.Any("names", s.conn.Names()))
+	s.conn.ReleaseName(s.name)
 	s.conn.Close()
 }
 
@@ -132,23 +138,6 @@ loop:
 	}
 }
 
-func (s *Slugbug) InspectBus(service string) {
-	var node *introspect.Node
-
-	svcObj := s.conn.Object(service, s.conn.BusObject().Path())
-	if node, err = introspect.Call(svcObj); err != nil {
-		log.Fatal(err)
-	}
-	// nodeDetails := introspect.NewIntrospectable(node)
-	// fmt.Println(nodeDetails.Introspect())
-	for _, v := range node.Interfaces {
-		fmt.Printf("Signals for %s\n", v.Name)
-		for _, k := range v.Signals {
-			fmt.Printf("%v\n", k)
-		}
-	}
-}
-
 // list service objects available to call on the bus
 func (s *Slugbug) ListBusServices() []string {
 	var (
@@ -174,4 +163,117 @@ func (s *Slugbug) ListBusServices() []string {
 
 	s.logger.Debug(fmt.Sprintf("Filtered %d connections down to %d", len(listNames), len(filteredNames)))
 	return filteredNames
+}
+
+func (s *Slugbug) InspectService(service string) {
+	var node *introspect.Node
+
+	svcObj := s.conn.Object(service, s.conn.BusObject().Path())
+	if node, err = introspect.Call(svcObj); err != nil {
+		log.Fatal(err)
+	}
+	for _, v := range node.Interfaces {
+		if slices.Contains(SkipInspectionServices, v.Name) {
+			continue
+		}
+		fmt.Println(v.Name)
+		printAnnotations(v.Annotations)
+		printMethods(v.Methods)
+		printProperties(v.Properties)
+		printSignals(v.Signals)
+	}
+}
+
+func printAnnotations(annotations []introspect.Annotation) {
+	if len(annotations) == 0 {
+		return
+	}
+	fmt.Printf("  Annotations\n")
+	fmt.Printf("    > %s", formatAnnotations(annotations))
+}
+
+func printMethods(methods []introspect.Method) {
+	if len(methods) == 0 {
+		return
+	}
+	fmt.Printf("  Methods\n")
+	for _, method := range methods {
+		fmt.Printf("    > %s%s\n", method.Name, formatArgs(method.Args))
+	}
+}
+
+func printProperties(properties []introspect.Property) {
+	if len(properties) == 0 {
+		return
+	}
+	fmt.Printf("  Properties\n")
+	for _, property := range properties {
+		fmt.Printf("    > Name: %s\n", property.Name)
+		fmt.Printf("      Type: %s\n", property.Type)
+		fmt.Printf("      Access: %s\n", property.Access)
+		fmt.Printf("      Annotations: %s\n", formatAnnotations(property.Annotations))
+	}
+}
+
+func printSignals(signals []introspect.Signal) {
+	if len(signals) == 0 {
+		return
+	}
+	fmt.Printf("  Signals\n")
+	for _, signal := range signals {
+		fmt.Printf("    > %s%s\n", signal.Name, formatArgs(signal.Args))
+		if len(signal.Annotations) > 0 {
+			fmt.Printf("    > Annotations: %s\n", formatAnnotations(signal.Annotations))
+		}
+	}
+}
+
+func formatAnnotations(annotations []introspect.Annotation) string {
+	if len(annotations) == 0 {
+		return ""
+	}
+	var ret strings.Builder
+
+	for _, annotation := range annotations {
+		fmt.Fprintf(&ret, "%s %s", annotation.Value, annotation.Name)
+	}
+
+	return ret.String()
+}
+
+func formatArgs(args []introspect.Arg) string {
+	var (
+		inArgs  []string
+		outArgs []string
+		ret     strings.Builder
+	)
+
+	// types and parameters dictate output
+	for _, arg := range args {
+		switch arg.Direction {
+		case "in":
+			if arg.Name == "" {
+				inArgs = append(inArgs, string(arg.Type))
+			} else {
+				inArgs = append(inArgs, fmt.Sprintf("%s %s", arg.Name, arg.Type))
+			}
+		case "out":
+			if arg.Name == "" {
+				outArgs = append(outArgs, string(arg.Type))
+			} else {
+				outArgs = append(outArgs, fmt.Sprintf("%s %s", arg.Name, arg.Type))
+			}
+		}
+	}
+
+	// format the arguments like a method call in other languages
+	if len(inArgs) > 0 && len(outArgs) > 0 {
+		fmt.Fprintf(&ret, "(%s) -> %s", strings.Join(inArgs, ", "), strings.Join(outArgs, ", "))
+	} else if len(inArgs) > 0 {
+		fmt.Fprintf(&ret, "(%s)", strings.Join(inArgs, ", "))
+	} else if len(outArgs) > 0 {
+		fmt.Fprintf(&ret, "() -> %s", strings.Join(outArgs, ", "))
+	}
+
+	return ret.String()
 }

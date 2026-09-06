@@ -98,7 +98,7 @@ func (m Model) View() tea.View {
 		var b strings.Builder
 
 		fmt.Fprintf(&b, "You are choosing to execute %s\n", operation)
-		return tea.NewView(s.Status.Padding(1, 2).Render(b.String()) + "\n\n")
+		return tea.NewView(s.Base.Padding(1, 2).Render(b.String()) + "\n\n")
 	default:
 
 		v := strings.TrimSuffix(m.form.View(), "\n\n")
@@ -110,7 +110,6 @@ func (m Model) View() tea.View {
 		footer := m.appBoundaryView(m.form.Help().ShortHelpView(m.form.KeyBinds()))
 		if len(errors) > 0 {
 			header = m.appErrorBoundaryView(m.errorView())
-			footer = m.appErrorBoundaryView("")
 		}
 
 		return tea.NewView(s.Base.Render(header + "\n" + body + "\n\n" + footer))
@@ -133,7 +132,7 @@ func (m Model) appBoundaryView(text string) string {
 	return lipgloss.PlaceHorizontal(
 		m.width,
 		lipgloss.Left,
-		s.HeaderText.Render(text),
+		s.StatusBarText.Render(text),
 		lipgloss.WithWhitespaceChars("/"),
 		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Foreground(s.Indigo)),
 	)
@@ -145,7 +144,7 @@ func (m Model) appErrorBoundaryView(text string) string {
 	return lipgloss.PlaceHorizontal(
 		m.width,
 		lipgloss.Left,
-		s.ErrorHeaderText.Render(text),
+		s.ErrorText.Render(text),
 		lipgloss.WithWhitespaceChars("/"),
 		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Foreground(s.Red)),
 	)
