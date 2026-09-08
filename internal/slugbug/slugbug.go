@@ -22,6 +22,7 @@ type Slugbug struct {
 	name        string
 	conn        *dbus.Conn
 	logger      *slog.Logger
+	services    []string
 	listUnique  bool
 	debug       bool
 	systemBus   bool
@@ -107,8 +108,8 @@ func (s *Slugbug) ConnectToBus() {
 // disconnect from the DBus
 func (s *Slugbug) CloseConnection() {
 	s.logger.Debug("Releasing connection name", slog.String("name", s.name))
-	s.logger.Debug("Closing connection", slog.Any("names", s.conn.Names()))
 	s.conn.ReleaseName(s.name)
+	s.logger.Debug("Closing connection", slog.Any("names", s.conn.Names()))
 	s.conn.Close()
 }
 
@@ -182,6 +183,14 @@ func (s *Slugbug) InspectService(service string) {
 		printProperties(v.Properties)
 		printSignals(v.Signals)
 	}
+}
+
+// only call ListServices once to save on processing
+func (s *Slugbug) Services() []string {
+	if len(s.services) == 0 {
+		s.services = s.ListBusServices()
+	}
+	return s.services
 }
 
 func printAnnotations(annotations []introspect.Annotation) {
