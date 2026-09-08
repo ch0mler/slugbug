@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"slugbug/internal/slugbug"
 )
 
@@ -20,19 +19,13 @@ func main() {
 	// close the connection at the end of the run
 	defer sb.CloseConnection()
 
-	// ask user which services they want to look at
-	// printServices(sb)
-	inspectService(sb, "org.freedesktop.DBus")
-	// inspectService(sb, "com.system76.Scheduler")
-}
+	/*
+	   // ask user which services they want to look at
+	   	for _, v := range sb.ListBusServices() {
+	   		fmt.Println(v)
+	   	}
 
-func inspectService(s *slugbug.Slugbug, service string) {
-	fmt.Printf("Inspecting service: %s\n", service)
-	s.InspectService(service)
-}
-
-func printServices(s *slugbug.Slugbug) {
-	for _, v := range s.ListBusServices() {
-		fmt.Println(v)
-	}
+	   // display traits of a particular service
+	   sb.InspectService("org.freedesktop.DBus")
+	*/
 }
