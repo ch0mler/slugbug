@@ -6,6 +6,14 @@ import (
 	"charm.land/huh/v2"
 )
 
+func operationOptions() []huh.Option[string] {
+	options := make([]huh.Option[string], 0, len(slugbug.AvailableOperations))
+	for _, operation := range slugbug.AvailableOperations {
+		options = append(options, huh.Option[string]{Key: operation.String(), Value: operation.String()})
+	}
+	return options
+}
+
 func IntroductionForm(ret *string) *huh.Form {
 	return huh.NewForm(
 		huh.NewGroup(
@@ -15,12 +23,19 @@ func IntroductionForm(ret *string) *huh.Form {
 		),
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Options(huh.NewOptions(
-					string(slugbug.Display),
-					string(slugbug.Call),
-					string(slugbug.Inspect),
-					string(slugbug.Monitor),
-				)...).
+				Options(operationOptions()...).
+				Title("What would you like to do?").
+				Key("operation").
+				Value(ret),
+		),
+	).WithShowHelp(true)
+}
+
+func OperationForm(ret *string) *huh.Form {
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Options(operationOptions()...).
 				Title("What would you like to do?").
 				Key("operation").
 				Value(ret),

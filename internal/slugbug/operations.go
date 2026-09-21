@@ -7,8 +7,14 @@ const (
 	Call    Operation = "Call a method"
 	Inspect Operation = "Inspect a service"
 	Monitor Operation = "Monitor signal(s)"
-	Quit    Operation = "Quit"
 )
+
+var AvailableOperations = []Operation{
+	Display,
+	Call,
+	Inspect,
+	Monitor,
+}
 
 func (o Operation) String() string {
 	return string(o)

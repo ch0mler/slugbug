@@ -2,7 +2,6 @@ package slugbug
 
 import (
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -14,8 +13,6 @@ import (
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
 )
-
-var err error
 
 // unique bool, debug bool, system bool, private bool
 type Slugbug struct {
@@ -51,7 +48,9 @@ func (s *Slugbug) Conn() *dbus.Conn {
 }
 
 // connect to the appropriate DBus bus
-func (s *Slugbug) ConnectToBus() {
+func (s *Slugbug) ConnectToBus() error {
+	var err error
+
 	if s.systemBus {
 		if helpers.IsRootUser() {
 			if s.privateConn {
@@ -60,11 +59,11 @@ func (s *Slugbug) ConnectToBus() {
 				s.conn, err = dbus.SystemBus()
 			}
 		} else {
-			log.Fatalf("Elevated privileges are needed to spy on the system bus")
+			return fmt.Errorf("elevated privileges are needed to spy on the system bus")
 		}
 	} else {
 		if helpers.IsRootUser() {
-			log.Fatalf("Root users do not have access to a per-user session bus. Use -system instead")
+			return fmt.Errorf("root users do not have access to a per-user session bus; use -system instead")
 		} else {
 			if s.privateConn {
 				s.conn, err = dbus.SessionBusPrivate()
@@ -75,16 +74,20 @@ func (s *Slugbug) ConnectToBus() {
 	}
 
 	if err != nil {
-		helpers.LogFatal("Failed to connect to dbus", err, s.logger)
+		return fmt.Errorf("failed to connect to dbus: %w", err)
 	}
 
 	if s.privateConn {
 		if err = s.conn.Auth(nil); err != nil {
-			helpers.LogFatal("Failed to auth to dbus", err, s.logger)
+			s.conn.Close()
+			s.conn = nil
+			return fmt.Errorf("failed to auth to dbus: %w", err)
 		}
 
 		if err = s.conn.Hello(); err != nil {
-			helpers.LogFatal("Dbus connection is not in a friendly mood right now", err, s.logger)
+			s.conn.Close()
+			s.conn = nil
+			return fmt.Errorf("dbus connection is not in a friendly mood right now: %w", err)
 		}
 	}
 
@@ -97,20 +100,26 @@ func (s *Slugbug) ConnectToBus() {
 	var reply dbus.RequestNameReply
 
 	if reply, err = s.conn.RequestName(s.name, dbus.NameFlagReplaceExisting); err != nil {
-		s.logger.Warn("Could not request name", slog.String("name", s.name))
+		return fmt.Errorf("could not request name %q: %w", s.name, err)
 	} else if reply == dbus.RequestNameReplyPrimaryOwner {
 		s.logger.Debug(fmt.Sprintf("Successfully bound connection to '%s'", s.name), slog.Any("names", s.conn.Names()))
 	} else {
 		s.logger.Warn("Unexpected response when requesting name", slog.String("name", s.name), slog.String("reply", reply.String()))
 	}
+
+	return nil
 }
 
 // disconnect from the DBus
 func (s *Slugbug) CloseConnection() {
+	if s.conn == nil {
+		return
+	}
 	s.logger.Debug("Releasing connection name", slog.String("name", s.name))
 	s.conn.ReleaseName(s.name)
 	s.logger.Debug("Closing connection", slog.Any("names", s.conn.Names()))
 	s.conn.Close()
+	s.conn = nil
 }
 
 // initialize DBus monitoring signals
@@ -140,14 +149,17 @@ loop:
 }
 
 // list service objects available to call on the bus
-func (s *Slugbug) ListBusServices() []string {
+func (s *Slugbug) ListBusServices() ([]string, error) {
 	var (
 		listNames     []string
 		filteredNames []string
 	)
 
-	if err = s.conn.BusObject().Call("org.freedesktop.DBus.ListNames", 0).Store(&listNames); err != nil {
-		helpers.LogFatal("Could not list service names", err, s.logger)
+	if s.conn == nil {
+		return nil, fmt.Errorf("not connected to dbus")
+	}
+	if err := s.conn.BusObject().Call("org.freedesktop.DBus.ListNames", 0).Store(&listNames); err != nil {
+		return nil, fmt.Errorf("could not list service names: %w", err)
 	}
 
 	for _, name := range listNames {
@@ -163,76 +175,81 @@ func (s *Slugbug) ListBusServices() []string {
 	}
 
 	s.logger.Debug(fmt.Sprintf("Filtered %d connections down to %d", len(listNames), len(filteredNames)))
-	return filteredNames
+	return filteredNames, nil
 }
 
-func (s *Slugbug) InspectService(service string) {
-	var node *introspect.Node
-
+func (s *Slugbug) InspectService(service string) (string, error) {
 	svcObj := s.conn.Object(service, s.conn.BusObject().Path())
-	if node, err = introspect.Call(svcObj); err != nil {
-		log.Fatal(err)
+	node, err := introspect.Call(svcObj)
+	if err != nil {
+		return "", err
 	}
+	var result strings.Builder
 	for _, v := range node.Interfaces {
 		if slices.Contains(SkipInspectionServices, v.Name) {
 			continue
 		}
-		fmt.Println(v.Name)
-		printAnnotations(v.Annotations)
-		printMethods(v.Methods)
-		printProperties(v.Properties)
-		printSignals(v.Signals)
+		fmt.Fprintln(&result, v.Name)
+		writeAnnotations(&result, v.Annotations)
+		writeMethods(&result, v.Methods)
+		writeProperties(&result, v.Properties)
+		writeSignals(&result, v.Signals)
 	}
+	return result.String(), nil
 }
 
 // only call ListServices once to save on processing
-func (s *Slugbug) Services() []string {
+func (s *Slugbug) Services() ([]string, error) {
 	if len(s.services) == 0 {
-		s.services = s.ListBusServices()
+		services, err := s.ListBusServices()
+		if err != nil {
+			return nil, err
+		}
+		s.services = services
 	}
-	return s.services
+	return s.services, nil
 }
 
-func printAnnotations(annotations []introspect.Annotation) {
+func writeAnnotations(result *strings.Builder, annotations []introspect.Annotation) {
 	if len(annotations) == 0 {
 		return
 	}
-	fmt.Printf("  Annotations\n")
-	fmt.Printf("    > %s", formatAnnotations(annotations))
+	fmt.Fprintln(result, "  Annotations")
+	fmt.Fprintf(result, "    > %s\n", formatAnnotations(annotations))
 }
 
-func printMethods(methods []introspect.Method) {
+func writeMethods(result *strings.Builder, methods []introspect.Method) {
 	if len(methods) == 0 {
 		return
 	}
-	fmt.Printf("  Methods\n")
+	fmt.Fprintln(result, "  Methods")
 	for _, method := range methods {
-		fmt.Printf("    > %s%s\n", method.Name, formatArgs(method.Args))
+		fmt.Fprintf(result, "    > %s%s\n", method.Name, formatArgs(method.Args))
 	}
 }
 
-func printProperties(properties []introspect.Property) {
+func writeProperties(result *strings.Builder, properties []introspect.Property) {
 	if len(properties) == 0 {
 		return
 	}
-	fmt.Printf("  Properties\n")
+	fmt.Fprintln(result, "  Properties")
 	for _, property := range properties {
-		fmt.Printf("    > Name: %s\n", property.Name)
-		fmt.Printf("      Type: %s\n", property.Type)
-		fmt.Printf("      Access: %s\n", property.Access)
-		fmt.Printf("      Annotations: %s\n", formatAnnotations(property.Annotations))
+		fmt.Fprintf(result, "    > Name: %s\n", property.Name)
+		fmt.Fprintf(result, "      Type: %s\n", property.Type)
+		fmt.Fprintf(result, "      Access: %s\n", property.Access)
+		fmt.Fprintf(result, "      Annotations: %s\n", formatAnnotations(property.Annotations))
 	}
 }
 
-func printSignals(signals []introspect.Signal) {
+func writeSignals(result *strings.Builder, signals []introspect.Signal) {
 	if len(signals) == 0 {
 		return
 	}
-	fmt.Printf("  Signals\n")
+	fmt.Fprintln(result, "  Signals")
 	for _, signal := range signals {
-		fmt.Printf("    > %s%s\n", signal.Name, formatArgs(signal.Args))
+		fmt.Fprintf(result, "    > %s%s\n", signal.Name, formatArgs(signal.Args))
 		if len(signal.Annotations) > 0 {
-			fmt.Printf("    > Annotations: %s\n", formatAnnotations(signal.Annotations))
+			fmt.Fprintf(result, "    > Annotations: %s\n", formatAnnotations(signal.Annotations))
 		}
 	}
 }
