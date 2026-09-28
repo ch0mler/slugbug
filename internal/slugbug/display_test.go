@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func newSlugbugWithBus(listUnique bool) *Slugbug {
-	sb := NewSlugBug(false, false, false, listUnique)
+func newSlugbugWithBus(system bool, private bool, debug bool, unique bool) *Slugbug {
+	sb := NewSlugBug(system, private, debug, unique)
 	sb.conn = &fakeBusConnection{
 		listedNames: []string{
 			"org.freedesktop.DBus",
@@ -50,7 +50,7 @@ func TestListBusServicesWithoutConnection(t *testing.T) {
 }
 
 func TestListBusServicesReturnsServiceNames(t *testing.T) {
-	sb := newSlugbugWithBus(false)
+	sb := newSlugbugWithBus(false, false, false, false)
 
 	services, err := sb.ListBusServices()
 	if err != nil {
@@ -65,7 +65,7 @@ func TestListBusServicesReturnsServiceNames(t *testing.T) {
 }
 
 func TestListBusServicesFiltersUniqueNamesByDefault(t *testing.T) {
-	sb := newSlugbugWithBus(false)
+	sb := newSlugbugWithBus(false, false, false, false)
 
 	services, err := sb.ListBusServices()
 	if err != nil {
@@ -80,7 +80,7 @@ func TestListBusServicesFiltersUniqueNamesByDefault(t *testing.T) {
 }
 
 func TestListBusServicesIncludesUniqueNamesWhenRequested(t *testing.T) {
-	sb := newSlugbugWithBus(true)
+	sb := newSlugbugWithBus(false, false, false, true)
 
 	services, err := sb.ListBusServices()
 	if err != nil {
