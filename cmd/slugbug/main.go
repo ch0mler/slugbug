@@ -2,11 +2,9 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"slugbug/internal/slugbug"
-	"slugbug/internal/ui"
-
-	tea "charm.land/bubbletea/v2"
 )
 
 func main() {
@@ -25,8 +23,17 @@ func main() {
 	// close the connection at the end of the run
 	defer sb.CloseConnection()
 
-	program := tea.NewProgram(ui.NewModel(sb))
-	if _, err := program.Run(); err != nil {
-		log.Fatalf("Error running Slugbug TUI: %s", err.Error())
+	services, err := sb.ListBusServices()
+	if err != nil {
+		log.Fatalf("Could not list bus services: %s", err)
 	}
+	for _, service := range services {
+		fmt.Println(service)
+	}
+	/*
+		program := tea.NewProgram(ui.NewModel(sb))
+		if _, err := program.Run(); err != nil {
+			log.Fatalf("Error running Slugbug TUI: %s", err.Error())
+		}
+	*/
 }

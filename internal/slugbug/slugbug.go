@@ -3,15 +3,9 @@ package slugbug
 import (
 	"fmt"
 	"log/slog"
-	"os"
-	"os/signal"
-	"slices"
 	"slugbug/internal/helpers"
-	"strings"
-	"syscall"
 
 	"github.com/godbus/dbus/v5"
-	"github.com/godbus/dbus/v5/introspect"
 )
 
 // unique bool, debug bool, system bool, private bool
@@ -122,82 +116,6 @@ func (s *Slugbug) CloseConnection() {
 	s.conn = nil
 }
 
-// initialize DBus monitoring signals
-func (s *Slugbug) EnableWatch() {
-	// connect to signal channel
-	ch := make(chan *dbus.Signal, 64)
-	s.conn.Signal(ch)
-
-	busNames := strings.Join(s.conn.Names(), ",")
-	s.logger.Debug("Watching bus", "names", busNames)
-
-	// Handle termination signals to clean up
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
-loop:
-	for {
-		select {
-		case s := <-ch:
-			if s == nil {
-				break loop
-			}
-		case sig := <-sigc:
-			s.logger.Info("Received signal. Exiting", slog.String("signal", sig.String()))
-			break loop
-		}
-	}
-}
-
-// list service objects available to call on the bus
-func (s *Slugbug) ListBusServices() ([]string, error) {
-	var (
-		listNames     []string
-		filteredNames []string
-	)
-
-	if s.conn == nil {
-		return nil, fmt.Errorf("not connected to dbus")
-	}
-	if err := s.conn.BusObject().Call("org.freedesktop.DBus.ListNames", 0).Store(&listNames); err != nil {
-		return nil, fmt.Errorf("could not list service names: %w", err)
-	}
-
-	for _, name := range listNames {
-		// own bus name encountered - skip it
-		if slices.Contains(s.conn.Names(), name) {
-			s.logger.Debug("Skipping own bus name", slog.String("name", name))
-			continue
-		}
-		// optionally include unique bus connection names like :1.0
-		if !strings.HasPrefix(name, ":") || s.listUnique {
-			filteredNames = append(filteredNames, name)
-		}
-	}
-
-	s.logger.Debug(fmt.Sprintf("Filtered %d connections down to %d", len(listNames), len(filteredNames)))
-	return filteredNames, nil
-}
-
-func (s *Slugbug) InspectService(service string) (string, error) {
-	svcObj := s.conn.Object(service, s.conn.BusObject().Path())
-	node, err := introspect.Call(svcObj)
-	if err != nil {
-		return "", err
-	}
-	var result strings.Builder
-	for _, v := range node.Interfaces {
-		if slices.Contains(SkipInspectionServices, v.Name) {
-			continue
-		}
-		fmt.Fprintln(&result, v.Name)
-		writeAnnotations(&result, v.Annotations)
-		writeMethods(&result, v.Methods)
-		writeProperties(&result, v.Properties)
-		writeSignals(&result, v.Signals)
-	}
-	return result.String(), nil
-}
-
 // only call ListServices once to save on processing
 func (s *Slugbug) Services() ([]string, error) {
 	if len(s.services) == 0 {
@@ -208,98 +126,4 @@ func (s *Slugbug) Services() ([]string, error) {
 		s.services = services
 	}
 	return s.services, nil
-}
-
-func writeAnnotations(result *strings.Builder, annotations []introspect.Annotation) {
-	if len(annotations) == 0 {
-		return
-	}
-	fmt.Fprintln(result, "  Annotations")
-	fmt.Fprintf(result, "    > %s\n", formatAnnotations(annotations))
-}
-
-func writeMethods(result *strings.Builder, methods []introspect.Method) {
-	if len(methods) == 0 {
-		return
-	}
-	fmt.Fprintln(result, "  Methods")
-	for _, method := range methods {
-		fmt.Fprintf(result, "    > %s%s\n", method.Name, formatArgs(method.Args))
-	}
-}
-
-func writeProperties(result *strings.Builder, properties []introspect.Property) {
-	if len(properties) == 0 {
-		return
-	}
-	fmt.Fprintln(result, "  Properties")
-	for _, property := range properties {
-		fmt.Fprintf(result, "    > Name: %s\n", property.Name)
-		fmt.Fprintf(result, "      Type: %s\n", property.Type)
-		fmt.Fprintf(result, "      Access: %s\n", property.Access)
-		fmt.Fprintf(result, "      Annotations: %s\n", formatAnnotations(property.Annotations))
-	}
-}
-
-func writeSignals(result *strings.Builder, signals []introspect.Signal) {
-	if len(signals) == 0 {
-		return
-	}
-	fmt.Fprintln(result, "  Signals")
-	for _, signal := range signals {
-		fmt.Fprintf(result, "    > %s%s\n", signal.Name, formatArgs(signal.Args))
-		if len(signal.Annotations) > 0 {
-			fmt.Fprintf(result, "    > Annotations: %s\n", formatAnnotations(signal.Annotations))
-		}
-	}
-}
-
-func formatAnnotations(annotations []introspect.Annotation) string {
-	if len(annotations) == 0 {
-		return ""
-	}
-	var ret strings.Builder
-
-	for _, annotation := range annotations {
-		fmt.Fprintf(&ret, "%s %s", annotation.Value, annotation.Name)
-	}
-
-	return ret.String()
-}
-
-func formatArgs(args []introspect.Arg) string {
-	var (
-		inArgs  []string
-		outArgs []string
-		ret     strings.Builder
-	)
-
-	// types and parameters dictate output
-	for _, arg := range args {
-		switch arg.Direction {
-		case "in":
-			if arg.Name == "" {
-				inArgs = append(inArgs, string(arg.Type))
-			} else {
-				inArgs = append(inArgs, fmt.Sprintf("%s %s", arg.Name, arg.Type))
-			}
-		case "out":
-			if arg.Name == "" {
-				outArgs = append(outArgs, string(arg.Type))
-			} else {
-				outArgs = append(outArgs, fmt.Sprintf("%s %s", arg.Name, arg.Type))
-			}
-		}
-	}
-
-	// format the arguments like a method call in other languages
-	if len(inArgs) > 0 && len(outArgs) > 0 {
-		fmt.Fprintf(&ret, "(%s) -> %s", strings.Join(inArgs, ", "), strings.Join(outArgs, ", "))
-	} else if len(inArgs) > 0 {
-		fmt.Fprintf(&ret, "(%s)", strings.Join(inArgs, ", "))
-	} else if len(outArgs) > 0 {
-		fmt.Fprintf(&ret, "() -> %s", strings.Join(outArgs, ", "))
-	}
-
-	return ret.String()
 }
