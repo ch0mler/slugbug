@@ -11,15 +11,13 @@ const Display Operation = "Display available services"
 
 // list service objects available to call on the bus
 func (s *Slugbug) ListBusServices() ([]string, error) {
-	var (
-		listNames     []string
-		filteredNames []string
-	)
+	var filteredNames []string
 
 	if s.conn == nil {
 		return nil, fmt.Errorf("not connected to dbus")
 	}
-	if err := s.conn.BusObject().Call("org.freedesktop.DBus.ListNames", 0).Store(&listNames); err != nil {
+	listNames, err := s.conn.ListNames()
+	if err != nil {
 		return nil, fmt.Errorf("could not list service names: %w", err)
 	}
 

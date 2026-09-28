@@ -11,7 +11,7 @@ import (
 // unique bool, debug bool, system bool, private bool
 type Slugbug struct {
 	name        string
-	conn        *dbus.Conn
+	conn        busConnection
 	logger      *slog.Logger
 	services    []string
 	listUnique  bool
@@ -38,19 +38,25 @@ func (s *Slugbug) Name() string {
 }
 
 func (s *Slugbug) Conn() *dbus.Conn {
-	return s.conn
+	if conn, ok := s.conn.(*dbusConnection); ok {
+		return conn.conn
+	}
+	return nil
 }
 
 // connect to the appropriate DBus bus
 func (s *Slugbug) ConnectToBus() error {
-	var err error
+	var (
+		conn *dbus.Conn
+		err  error
+	)
 
 	if s.systemBus {
 		if helpers.IsRootUser() {
 			if s.privateConn {
-				s.conn, err = dbus.SystemBusPrivate()
+				conn, err = dbus.SystemBusPrivate()
 			} else {
-				s.conn, err = dbus.SystemBus()
+				conn, err = dbus.SystemBus()
 			}
 		} else {
 			return fmt.Errorf("elevated privileges are needed to spy on the system bus")
@@ -60,19 +66,24 @@ func (s *Slugbug) ConnectToBus() error {
 			return fmt.Errorf("root users do not have access to a per-user session bus; use -system instead")
 		} else {
 			if s.privateConn {
-				s.conn, err = dbus.SessionBusPrivate()
+				conn, err = dbus.SessionBusPrivate()
 			} else {
-				s.conn, err = dbus.SessionBus()
+				conn, err = dbus.SessionBus()
 			}
 		}
 	}
 
+	if conn == nil {
+		s.conn = nil
+	} else {
+		s.conn = &dbusConnection{conn: conn}
+	}
 	if err != nil {
 		return fmt.Errorf("failed to connect to dbus: %w", err)
 	}
 
 	if s.privateConn {
-		if err = s.conn.Auth(nil); err != nil {
+		if err = s.conn.Auth(); err != nil {
 			s.conn.Close()
 			s.conn = nil
 			return fmt.Errorf("failed to auth to dbus: %w", err)
@@ -86,7 +97,7 @@ func (s *Slugbug) ConnectToBus() error {
 	}
 
 	if s.conn.Connected() {
-		busPath := string(s.conn.BusObject().Path())
+		busPath := string(s.conn.BusPath())
 		connName := s.conn.Names()[0]
 		s.logger.Debug("Connected to bus", slog.String("unique_id", connName), slog.String("path", busPath))
 	}
