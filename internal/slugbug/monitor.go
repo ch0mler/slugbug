@@ -4,6 +4,7 @@ import "fmt"
 
 const Monitor Operation = "Monitor signal(s)"
 
-func (s *Slugbug) MonitorSignal(service string, signal string) {
+func (s *Slugbug) MonitorSignal(service string, signal string) error {
 	fmt.Printf("Monitoring signal: '%s' on service: '%s'\n", signal, service)
+	return nil
 }
