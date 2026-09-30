@@ -6,6 +6,40 @@ import (
 	"charm.land/huh/v2"
 )
 
+// ////////////////////////////////////////////////////////////
+// Temporary forms while functionality is being implemented //
+// ////////////////////////////////////////////////////////////
+
+func InspectForm() (string, string) {
+	var (
+		service    string
+		objectPath string
+	)
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Enter the service name to inspect").
+				Placeholder("org.freedesktop.systemd1").
+				CharLimit(1000).
+				Value(&service),
+			huh.NewInput().
+				Title("Enter the object path to inspect").
+				Placeholder("/org/freedesktop/systemd1").
+				CharLimit(1000).
+				Value(&objectPath),
+		),
+	)
+	// Note: no error checking here because it's only development
+	// and we need some motivation to implement a real UI
+	form.Run()
+	return service, objectPath
+}
+
+////////////////////////////////////////////////////////////
+// End of temporary forms
+////////////////////////////////////////////////////////////
+
 func operationOptions() []huh.Option[string] {
 	options := make([]huh.Option[string], 0, len(slugbug.AvailableOperations))
 	for _, operation := range slugbug.AvailableOperations {
