@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"slugbug/internal/slugbug"
+	"slugbug/internal/ui"
 )
 
 func chooseOperation(sb *slugbug.Slugbug, operation string) {
@@ -19,15 +20,15 @@ func chooseOperation(sb *slugbug.Slugbug, operation string) {
 		}
 	case "inspect":
 		fmt.Println("Inspect not implemented yet")
-		// service := flag.Arg(1)
-		// if service == "" {
-		// 	log.Fatalf("No service specified for inspection")
-		// }
-		// result, err := sb.InspectService(service)
-		// if err != nil {
-		// 	log.Fatalf("Could not inspect service %s: %s", service, err)
-		// }
-		// fmt.Print(result)
+		service, objectPath := ui.InspectForm()
+		if service == "" {
+			log.Fatalf("No service specified for inspection")
+		}
+		result, err := sb.InspectService(service, objectPath)
+		if err != nil {
+			log.Fatalf("Could not inspect service %s: %s", service, err)
+		}
+		fmt.Print(result)
 	case "invoke":
 		fmt.Println("Invoke not implemented yet")
 		// service := flag.Arg(1)

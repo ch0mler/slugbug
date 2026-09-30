@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
 )
 
@@ -18,8 +19,8 @@ var SkipInspectionServices = []string{
 	"org.freedesktop.DBus.Peer",
 }
 
-func (s *Slugbug) InspectService(service string) (string, error) {
-	svcObj := s.conn.Object(service, s.conn.BusObject().Path())
+func (s *Slugbug) InspectService(service string, object string) (string, error) {
+	svcObj := s.conn.Object(service, dbus.ObjectPath(object))
 	node, err := introspect.Call(svcObj)
 	if err != nil {
 		return "", err
